@@ -1,3 +1,4 @@
+import { Result } from "../monads";
 import { Token } from "./tokens";
 
 const tokenTests: {
@@ -28,11 +29,12 @@ const tokenTests: {
   },
 ];
 
-export const tokenize = (input: string): Token[] => {
+export const tokenize = (input: string): Result<Token[]> => {
   const tokens: Token[] = [];
   let index = 0;
 
   while (index < input.length) {
+    const currentIndex = index;
     const char = input[index];
 
     if (char === " ") {
@@ -60,7 +62,11 @@ export const tokenize = (input: string): Token[] => {
         }
       }
     }
+
+    if (index === currentIndex) {
+      return Result.failure(`Could not tokenize "${char}"`);
+    }
   }
 
-  return tokens;
+  return Result.ok(tokens);
 };

@@ -1,1 +1,2 @@
-export * from "./maybe";
+export * as maybe from "./maybe";
+export * from "./result";
