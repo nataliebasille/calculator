@@ -12,6 +12,18 @@ export class Result<T> {
     return new Result({ type: "failure", error });
   }
 
+  match<U>({
+    ok,
+    failure,
+  }: {
+    ok: (value: T) => U;
+    failure: (error: string) => U;
+  }): U {
+    return this.result.type === "ok"
+      ? ok(this.result.value)
+      : failure(this.result.error);
+  }
+
   map<U>(f: (value: T) => U): Result<U> {
     return this.result.type === "ok"
       ? Result.ok(f(this.result.value))

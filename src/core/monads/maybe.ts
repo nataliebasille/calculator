@@ -11,6 +11,10 @@ export class Maybe<T> {
     return new Maybe({ type: "none" });
   }
 
+  match<U>({ some, none }: { some: (value: T) => U; none: () => U }): U {
+    return this.maybe.type === "some" ? some(this.maybe.value) : none();
+  }
+
   map<U>(f: (value: T) => U): Maybe<U> {
     return this.maybe.type === "some"
       ? Maybe.some(f(this.maybe.value))
