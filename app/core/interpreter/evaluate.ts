@@ -50,7 +50,7 @@ function processExpression(context: TokenContext): Result<number> {
 }
 
 function processTerm(context: TokenContext): Result<number> {
-  return binaryApplyUntilTokenIsNotOneOf(
+  return binaryApplyLeftToRightUntilTokenIsNotOneOf(
     context,
     processFactor,
     (operatorToken, leftValue, rightValue) => {
@@ -64,7 +64,7 @@ function processTerm(context: TokenContext): Result<number> {
 }
 
 function processFactor(context: TokenContext): Result<number> {
-  return binaryApplyUntilTokenIsNotOneOf(
+  return binaryApplyLeftToRightUntilTokenIsNotOneOf(
     context,
     processPower,
     (operatorToken, leftValue, rightValue) => {
@@ -81,10 +81,10 @@ function processFactor(context: TokenContext): Result<number> {
 }
 
 function processPower(context: TokenContext): Result<number> {
-  return binaryApplyUntilTokenIsNotOneOf(
+  return binaryApplyRightToLeftUntilTokenNotOne(
     context,
     processUnit,
-    (operatorToken, leftValue, rightValue) => {
+    (_, leftValue, rightValue) => {
       return leftValue ** rightValue;
     },
     "exponent"
@@ -114,7 +114,7 @@ function unexpectedEndOfExpression(): Result<number> {
   return Result.failure(`Unexpected end of expression`);
 }
 
-function binaryApplyUntilTokenIsNotOneOf<T extends Token["type"][]>(
+function binaryApplyLeftToRightUntilTokenIsNotOneOf<T extends Token["type"][]>(
   context: TokenContext,
   action: (context: TokenContext) => Result<number>,
   nextValue: (
@@ -139,4 +139,33 @@ function binaryApplyUntilTokenIsNotOneOf<T extends Token["type"][]>(
       },
     });
   }
+}
+
+function binaryApplyRightToLeftUntilTokenNotOne<T extends Token["type"][]>(
+  context: TokenContext,
+  action: (context: TokenContext) => Result<number>,
+  nextValue: (
+    token: Extract<Token, { type: T[number] }>,
+    leftValue: number,
+    rightValue: number
+  ) => number,
+  ...types: T
+): Result<number> {
+  const leftResult = action(context);
+
+  return context.readIfTokenIs(...types).match({
+    none: () => leftResult,
+    some: (token) => {
+      const rightResult = binaryApplyRightToLeftUntilTokenNotOne(
+        context,
+        action,
+        nextValue,
+        ...types
+      );
+
+      return leftResult.flatMap((left) =>
+        rightResult.map((rightValue) => nextValue(token, left, rightValue))
+      );
+    },
+  });
 }
