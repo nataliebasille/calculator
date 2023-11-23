@@ -1,0 +1,21 @@
+{
+  "name": "@nataliebasille/calculator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "Natalie Basille",
+  "license": "ISC",
+  "dependencies": {
+    "@natcore/typescript-utils": "github:nataliebasille/natcore-typescript-utils",
+    "typescript": "^5.2.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "fast-check": "^3.13.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1"
+  }
+}
