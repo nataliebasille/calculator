@@ -63,7 +63,7 @@ describe('tokenize', () => {
       fc.property(piArbitrary, (piString) => {
         expectResultsToBe(tokenize(piString), 'ok', [
           {
-            type: 'builtin:number',
+            type: 'identifier',
             value: 'pi',
           },
         ]);
@@ -76,7 +76,7 @@ describe('tokenize', () => {
       fc.property(eArbitrary, (eString) => {
         expectResultsToBe(tokenize(eString), 'ok', [
           {
-            type: 'builtin:number',
+            type: 'identifier',
             value: 'e',
           },
         ]);
@@ -121,7 +121,7 @@ describe('tokenize', () => {
         expectResultsToBe(tokenize(identifier), 'ok', [
           {
             type: 'identifier',
-            value: identifier,
+            value: identifier.toLowerCase(),
           },
         ]);
       })
@@ -163,19 +163,14 @@ describe('tokenize', () => {
         ),
         ([first, operator, second, firstWhitespace, secondWhitespace]) => {
           function createToken(value: string): Token {
-            return value.toLowerCase() === 'pi' || value.toLowerCase() === 'e'
-              ? {
-                  type: 'builtin:number',
-                  value: value.toLowerCase() as 'pi' | 'e',
-                }
-              : !isNaN(parseFloat(value))
+            return !isNaN(parseFloat(value))
               ? {
                   type: 'number',
                   value: parseFloat(value),
                 }
               : {
                   type: 'identifier',
-                  value: value,
+                  value: value.toLowerCase(),
                 };
           }
           const leftToken = createToken(first);

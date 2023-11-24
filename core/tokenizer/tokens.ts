@@ -3,11 +3,6 @@ export type NumberToken = {
   value: number;
 };
 
-export type BuiltinNumberToken = {
-  type: 'builtin:number';
-  value: 'pi' | 'e';
-};
-
 export type OperatorToken<TOperator extends string> = TOperator extends string
   ? {
       type: 'operator';
@@ -32,7 +27,6 @@ export type IdentifierToken = {
 
 export type Token =
   | NumberToken
-  | BuiltinNumberToken
   | OperatorToken<'+' | '-' | '*' | '/' | '^'>
   | ParenthesisToken
   | IdentifierToken;

@@ -20,15 +20,6 @@ const tokenTesters: ReadonlyArray<TokenTester> = [
     },
   },
   {
-    test: /(?:pi|pI|Pi|PI|e)(?![a-zA-Z0-9])/,
-    createToken(value: string) {
-      return {
-        type: 'builtin:number',
-        value: value.toLowerCase() as 'pi' | 'e',
-      };
-    },
-  },
-  {
     test: /[-+*/^]/,
     createToken(value: string) {
       return {
@@ -60,7 +51,7 @@ const tokenTesters: ReadonlyArray<TokenTester> = [
     createToken(value: string) {
       return {
         type: 'identifier',
-        value: value,
+        value: value.toLowerCase(),
       };
     },
   },

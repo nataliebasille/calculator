@@ -2,8 +2,9 @@ import { maybe, pipe, result } from '@natcore/typescript-utils/functional';
 import { Token } from '../tokenizer/tokens';
 
 type InterpreterContext = {
-  readonly PI: number;
-  readonly E: number;
+  readonly numbers: {
+    readonly [key: string]: number;
+  };
 };
 
 export type InterpratationError =
@@ -20,13 +21,18 @@ export type InterpratationError =
     }
   | {
       reason: 'division_by_zero';
+    }
+  | {
+      reason: 'unknown_number';
+      identifier: string;
     };
 
 export const INTERPRETATION_ERROR_CODES = {
-  unexpected_token: 'unexpected_token',
-  unexpected_end_of_input: 'unexpected_end_of_input',
   division_by_zero: 'division_by_zero',
   exhaustive_check_failed: 'exhaustive_check_failed',
+  unexpected_end_of_input: 'unexpected_end_of_input',
+  unknown_number: 'unknown_number',
+  unexpected_token: 'unexpected_token',
 } as const;
 
 type InterpretationResult = result.Result<number, InterpratationError>;
@@ -147,7 +153,7 @@ function interpretExponent(
   context: InterpreterContext
 ): PartialInterpretationResult {
   return pipe(
-    interpretSignedUnit(tokenMarker, context),
+    interpretSigned(tokenMarker, context),
     result.flatMap(({ value, next }) =>
       interpretExponentTail(value, next, context)
     )
@@ -164,7 +170,7 @@ function interpretExponentTail(
     maybe.match({
       some: ([operatorToken, next]) => {
         return pipe(
-          interpretSignedUnit(next, context),
+          interpretSigned(next, context),
           result.flatMap(({ value: rightValue, next }) => {
             return operatorToken.value === '^'
               ? result.ok({ value: Math.pow(leftValue, rightValue), next })
@@ -177,7 +183,7 @@ function interpretExponentTail(
   );
 }
 
-function interpretSignedUnit(
+function interpretSigned(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
@@ -205,38 +211,33 @@ function interpretUnit(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return interpretNumber(tokenMarker, context);
-}
-
-function interpretNumber(
-  tokenMarker: TokenMarker,
-  context: InterpreterContext
-): PartialInterpretationResult {
   return pipe(
-    readToken(tokenMarker, ['number', 'builtin:number', 'left_paren']),
+    readToken(tokenMarker, ['identifier', 'number', 'left_paren']),
     result.flatMap(([token, next]) => {
       switch (token.type) {
-        case 'builtin:number':
-          return token.value === 'e'
-            ? result.ok({ value: context.E, next })
-            : token.value === 'pi'
-            ? result.ok({ value: context.PI, next })
-            : exhaustiveResult(token.value);
+        case 'identifier':
+          return pipe(
+            lookvalue(context.numbers, token.value),
+            maybe.match({
+              some: (value) => result.ok({ value, next }),
+              none: () =>
+                result.error({
+                  reason: INTERPRETATION_ERROR_CODES.unknown_number,
+                  identifier: token.value,
+                }) as PartialInterpretationResult,
+            })
+          );
         case 'number':
           return result.ok({ value: token.value, next });
         case 'left_paren':
           return pipe(
             interpretExpression(next, context),
-            result.flatMap(({ value, next }) => {
-              return pipe(
+            result.flatMap(({ value, next }) =>
+              pipe(
                 readToken(next, ['right_paren']),
-                result.flatMap(([token, next]) => {
-                  return token.type === 'right_paren'
-                    ? result.ok({ value, next })
-                    : exhaustiveResult(token.type);
-                })
-              );
-            })
+                result.map(([, next]) => ({ value, next }))
+              )
+            )
           );
         default:
           return exhaustiveResult(token);
@@ -354,6 +355,11 @@ function advanceCursor({ tokens, cursor }: TokenMarker): TokenMarker {
     tokens,
     cursor: cursor + 1,
   };
+}
+
+function lookvalue<T>(values: { [key: string]: T }, key: string) {
+  key = key.toLowerCase();
+  return key in values ? maybe.some(values[key]) : maybe.none;
 }
 
 function exhaustiveResult(value: never): PartialInterpretationResult {

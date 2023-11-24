@@ -12,6 +12,7 @@ import {
   numberStringArbitrary,
   signArbitrary,
 } from '../+test_utils/arbitraries';
+import { numbers } from '../builtin';
 
 describe('interpret', () => {
   test('should interpret arbitrary number strings correctly', () => {
@@ -222,12 +223,7 @@ function runInterpretationTest(
 ) {
   const output = pipe(
     tokenize(input),
-    result.flatMap((tokens) =>
-      interpret(tokens, {
-        PI: Math.PI,
-        E: Math.E,
-      })
-    )
+    result.flatMap((tokens) => interpret(tokens, { numbers }))
   );
 
   expect(output).toEqual(expected);
@@ -236,21 +232,11 @@ function runInterpretationTest(
 function expectEqualResults(input1: string, input2: string) {
   const output1 = pipe(
     tokenize(input1),
-    result.flatMap((tokens) =>
-      interpret(tokens, {
-        PI: Math.PI,
-        E: Math.E,
-      })
-    )
+    result.flatMap((tokens) => interpret(tokens, { numbers }))
   );
   const output2 = pipe(
     tokenize(input2),
-    result.flatMap((tokens) =>
-      interpret(tokens, {
-        PI: Math.PI,
-        E: Math.E,
-      })
-    )
+    result.flatMap((tokens) => interpret(tokens, { numbers }))
   );
 
   expect(output1).toEqual(output2);
