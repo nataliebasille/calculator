@@ -61,53 +61,59 @@ export function tokenize(input: string): result.Result<Token[], string> {
   return tokenizeProcessor(input);
 }
 
+type TokenizeProcessorResult = result.Result<Token[], string>;
+
 function tokenizeProcessor(
   input: string,
   cursor: number = 0,
-  tokens: result.Result<Token[], string> = result.ok([])
-): result.Result<Token[], string> {
+  tokens: TokenizeProcessorResult = result
+    .from<TokenizeProcessorResult>()
+    .ok([])
+): TokenizeProcessorResult {
   while (cursor < input.length && /\s/.test(input[cursor])) {
     cursor++;
   }
 
-  return pipe(
-    tokens,
-    result.flatMap((tokens) => {
-      if (cursor >= input.length) {
-        return result.ok(tokens);
-      }
+  return result.flatMap(tokens, (tokens) => {
+    if (cursor >= input.length) {
+      return result.from<TokenizeProcessorResult>().ok(tokens);
+    }
 
-      return pipe(
-        tokenTesters.reduce(
-          (result, tester) =>
-            pipe(
-              result,
-              maybe.match({
-                some: () => result,
-                none: () =>
-                  pipe(
-                    test(tester, input, cursor),
-                    maybe.map((raw) => ({
-                      raw,
-                      token: tester.createToken(raw),
-                    }))
-                  ),
-              })
-            ),
-          maybe.none as maybe.Maybe<{ raw: string; token: Token }>
-        ),
-        maybe.match({
-          some: ({ raw, token }) =>
-            tokenizeProcessor(
-              input,
-              cursor + raw.length,
-              result.ok((tokens.push(token), tokens))
-            ),
-          none: () => result.error(`Unexpected token: ${input[cursor]}`),
-        })
-      );
-    })
-  );
+    return pipe(
+      tokenTesters.reduce(
+        (result, tester) =>
+          pipe(
+            result,
+            maybe.match({
+              some: () => result,
+              none: () =>
+                pipe(
+                  test(tester, input, cursor),
+                  maybe.map((raw) => ({
+                    raw,
+                    token: tester.createToken(raw),
+                  }))
+                ),
+            })
+          ),
+        maybe.none() as maybe.Maybe<{ raw: string; token: Token }>
+      ),
+      maybe.match({
+        some: ({ raw, token }) =>
+          tokenizeProcessor(
+            input,
+            cursor + raw.length,
+            result
+              .from<TokenizeProcessorResult>()
+              .ok((tokens.push(token), tokens))
+          ),
+        none: () =>
+          result
+            .from<TokenizeProcessorResult>()
+            .error(`Unexpected token: ${input[cursor]}`),
+      })
+    );
+  });
 }
 
 function test(
@@ -119,7 +125,7 @@ function test(
     ? regexTest(tester, input, cursor)
     : isStringTokenTester(tester)
     ? stringTest(tester, input, cursor)
-    : maybe.none;
+    : maybe.none();
 }
 
 function regexTest(test: RegexTokenTester, input: string, cursor: number) {
@@ -127,13 +133,13 @@ function regexTest(test: RegexTokenTester, input: string, cursor: number) {
   regex.lastIndex = cursor;
   const match = regex.exec(input);
 
-  return match ? maybe.some(match[0]) : maybe.none;
+  return match ? maybe.some(match[0]) : maybe.none<string>();
 }
 
 function stringTest(test: StringTokenTester, input: string, cursor: number) {
   const matches = input.startsWith(test.test, cursor);
 
-  return matches ? maybe.some(test.test) : maybe.none;
+  return matches ? maybe.some(test.test) : maybe.none<string>();
 }
 
 function isRegexTokenTester(tester: TokenTester): tester is RegexTokenTester {

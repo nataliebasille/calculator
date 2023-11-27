@@ -17,7 +17,7 @@ export type InterpratationError =
     }
   | {
       reason: 'exhaustive_check_failed';
-      value: any;
+      value: unknown;
     }
   | {
       reason: 'division_by_zero';
@@ -52,16 +52,16 @@ export function interpret(
   tokens: Token[],
   context: InterpreterContext
 ): InterpretationResult {
-  return pipe(
+  return result.flatMap(
     interpretExpression({ tokens, cursor: 0 }, context),
-    result.flatMap(({ value, next: { cursor, tokens } }) => {
+    ({ value, next: { cursor, tokens } }) => {
       return cursor < tokens.length
-        ? result.error({
+        ? result.from<InterpretationResult>().error({
             reason: INTERPRETATION_ERROR_CODES.unexpected_token,
             token: tokens[cursor],
           })
-        : result.ok(value);
-    })
+        : result.from<InterpretationResult>().ok(value);
+    }
   );
 }
 
@@ -76,9 +76,9 @@ function interpretTerm(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
+  return result.flatMap(
     interpretFactor(tokenMarker, context),
-    result.flatMap(({ value, next }) => interpretTermTail(value, next, context))
+    ({ value, next }) => interpretTermTail(value, next, context)
   );
 }
 
@@ -87,35 +87,30 @@ function interpretTermTail(
   marker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
-    readTokenIf(marker, ['operator'], ['+', '-']),
-    maybe.match({
-      some: ([operatorToken, next]) => {
-        return pipe(
-          interpretFactor(next, context),
-          result.flatMap(({ value: rightValue, next }) => {
-            return operatorToken.value === '+'
-              ? result.ok({ value: leftValue + rightValue, next })
-              : operatorToken.value === '-'
-              ? result.ok({ value: leftValue - rightValue, next })
-              : exhaustiveResult(operatorToken);
-          })
-        );
-      },
-      none: () => result.ok({ value: leftValue, next: marker }),
-    })
-  );
+  return maybe.match(readTokenIf(marker, ['operator'], ['+', '-']), {
+    some: ([operatorToken, next]) => {
+      return result.flatMap(
+        interpretFactor(next, context),
+        ({ value: rightValue, next }) => {
+          return operatorToken.value === '+'
+            ? createPartialResultOK(leftValue + rightValue, next)
+            : operatorToken.value === '-'
+            ? createPartialResultOK(leftValue - rightValue, next)
+            : exhaustiveResult(operatorToken);
+        }
+      );
+    },
+    none: () => createPartialResultOK(leftValue, marker),
+  });
 }
 
 function interpretFactor(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
+  return result.flatMap(
     interpretExponent(tokenMarker, context),
-    result.flatMap(({ value, next }) =>
-      interpretFactorTail(value, next, context)
-    )
+    ({ value, next }) => interpretFactorTail(value, next, context)
   );
 }
 
@@ -124,39 +119,34 @@ function interpretFactorTail(
   marker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
-    readTokenIf(marker, ['operator'], ['*', '/']),
-    maybe.match({
-      some: ([operatorToken, next]) => {
-        return pipe(
-          interpretExponent(next, context),
-          result.flatMap(({ value: rightValue, next }) => {
-            return operatorToken.value === '*'
-              ? result.ok({ value: leftValue * rightValue, next })
-              : operatorToken.value === '/'
-              ? rightValue === 0
-                ? result.error({
-                    reason: INTERPRETATION_ERROR_CODES.division_by_zero,
-                  })
-                : result.ok({ value: leftValue / rightValue, next })
-              : exhaustiveResult(operatorToken);
-          })
-        );
-      },
-      none: () => result.ok({ value: leftValue, next: marker }),
-    })
-  );
+  return maybe.match(readTokenIf(marker, ['operator'], ['*', '/']), {
+    some: ([operatorToken, next]) => {
+      return result.flatMap(
+        interpretExponent(next, context),
+        ({ value: rightValue, next }) => {
+          return operatorToken.value === '*'
+            ? createPartialResultOK(leftValue * rightValue, next)
+            : operatorToken.value === '/'
+            ? rightValue === 0
+              ? createPartialResultError({
+                  reason: INTERPRETATION_ERROR_CODES.division_by_zero,
+                })
+              : createPartialResultOK(leftValue / rightValue, next)
+            : exhaustiveResult(operatorToken);
+        }
+      );
+    },
+    none: () => createPartialResultOK(leftValue, marker),
+  });
 }
 
 function interpretExponent(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
+  return result.flatMap(
     interpretSigned(tokenMarker, context),
-    result.flatMap(({ value, next }) =>
-      interpretExponentTail(value, next, context)
-    )
+    ({ value, next }) => interpretExponentTail(value, next, context)
   );
 }
 
@@ -165,90 +155,93 @@ function interpretExponentTail(
   marker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
-    readTokenIf(marker, ['operator'], ['^']),
-    maybe.match({
-      some: ([operatorToken, next]) => {
-        return pipe(
-          interpretSigned(next, context),
-          result.flatMap(({ value: rightValue, next }) => {
-            return operatorToken.value === '^'
-              ? result.ok({ value: Math.pow(leftValue, rightValue), next })
-              : exhaustiveResult(operatorToken.value);
-          })
-        );
-      },
-      none: () => result.ok({ value: leftValue, next: marker }),
-    })
-  );
+  return maybe.match(readTokenIf(marker, ['operator'], ['^']), {
+    some: ([operatorToken, next]) => {
+      return result.flatMap(
+        interpretSigned(next, context),
+        ({ value: rightValue, next }) => {
+          return operatorToken.value === '^'
+            ? createPartialResultOK(Math.pow(leftValue, rightValue), next)
+            : exhaustiveResult(operatorToken.value);
+        }
+      );
+    },
+    none: () => createPartialResultOK(leftValue, marker),
+  });
 }
 
 function interpretSigned(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
-    readTokenIf(tokenMarker, ['operator'], ['-', '+']),
-    maybe.match({
-      some: ([operatorToken, next]) => {
-        return pipe(
-          interpretUnit(next, context),
-          result.flatMap(({ value, next }) => {
-            return operatorToken.value === '-'
-              ? result.ok({ value: -value, next })
-              : operatorToken.value === '+'
-              ? result.ok({ value: value, next })
-              : exhaustiveResult(operatorToken);
-          })
-        );
-      },
-      none: () => interpretUnit(tokenMarker, context),
-    })
-  );
+  return maybe.match(readTokenIf(tokenMarker, ['operator'], ['-', '+']), {
+    some: ([operatorToken, next]) => {
+      return result.flatMap(interpretUnit(next, context), ({ value, next }) => {
+        return operatorToken.value === '-'
+          ? createPartialResultOK(-value, next)
+          : operatorToken.value === '+'
+          ? createPartialResultOK(value, next)
+          : exhaustiveResult(operatorToken);
+      });
+    },
+    none: () => interpretUnit(tokenMarker, context),
+  });
 }
 
 function interpretUnit(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return pipe(
+  return result.flatMap(
     readToken(tokenMarker, ['identifier', 'number', 'left_paren']),
-    result.flatMap(([token, next]) => {
+    ([token, next]) => {
       switch (token.type) {
         case 'identifier':
-          return pipe(
-            lookvalue(context.numbers, token.value),
-            maybe.match({
-              some: (value) => result.ok({ value, next }),
-              none: () =>
-                result.error({
-                  reason: INTERPRETATION_ERROR_CODES.unknown_number,
-                  identifier: token.value,
-                }) as PartialInterpretationResult,
-            })
-          );
+          return maybe.match(lookvalue(context.numbers, token.value), {
+            some: (value) => createPartialResultOK(value, next),
+            none: () =>
+              createPartialResultError({
+                reason: INTERPRETATION_ERROR_CODES.unknown_number,
+                identifier: token.value,
+              }),
+          });
         case 'number':
-          return result.ok({ value: token.value, next });
+          return createPartialResultOK(token.value, next);
         case 'left_paren':
-          return pipe(
+          return result.flatMap(
             interpretExpression(next, context),
-            result.flatMap(({ value, next }) =>
-              pipe(
-                readToken(next, ['right_paren']),
-                result.map(([, next]) => ({ value, next }))
-              )
-            )
+            ({ value, next }) =>
+              result.map(readToken(next, ['right_paren']), ([, next]) => ({
+                value,
+                next,
+              }))
           );
         default:
           return exhaustiveResult(token);
       }
-    })
+    }
   );
 }
 
 function getCurrentToken({ tokens, cursor }: TokenMarker): maybe.Maybe<Token> {
-  return cursor >= tokens.length ? maybe.none : maybe.some(tokens[cursor]);
+  return cursor >= tokens.length ? maybe.none() : maybe.some(tokens[cursor]);
 }
+
+type InferExpectedValue<TType extends Token['type']> = Extract<
+  Token,
+  { type: TType }
+>['value'];
+
+type ReadTokenResult<
+  TExpectedTypes extends Token['type'],
+  TExpectedValues extends Token['value']
+> = result.Result<
+  readonly [
+    Extract<Token, { type: TExpectedTypes; value: TExpectedValues }>,
+    TokenMarker
+  ],
+  InterpratationError
+>;
 
 function readTokenIf<
   TExpectedTypes extends Array<Token['type']>,
@@ -260,94 +253,64 @@ function readTokenIf<
   matchTypes?: TExpectedTypes,
   matchValues?: TExpectedValues
 ): maybe.Maybe<
-  readonly [
-    Extract<
-      Token,
-      { type: TExpectedTypes[number]; value: TExpectedValues[number] }
-    >,
-    TokenMarker
-  ]
+  result.Result_InferOK<
+    ReadTokenResult<TExpectedTypes[number], TExpectedValues[number]>
+  >
 > {
-  return pipe(
-    getCurrentToken(tokenMarker),
-    maybe.flatMap((token) => {
-      return (!matchTypes || matchTypes.includes(token.type)) &&
-        (!matchValues || matchValues.includes(token.value as any))
-        ? maybe.some([token, advanceCursor(tokenMarker)] as const as [
-            Extract<
-              Token,
-              { type: TExpectedTypes[number]; value: TExpectedValues[number] }
-            >,
-            TokenMarker
-          ])
-        : maybe.none;
-    })
-  );
+  return maybe.flatMap(getCurrentToken(tokenMarker), (token) => {
+    return (!matchTypes || matchTypes.includes(token.type)) &&
+      (!matchValues || matchValues.includes(token.value as any))
+      ? maybe.some([token, advanceCursor(tokenMarker)] as const as [
+          Extract<
+            Token,
+            { type: TExpectedTypes[number]; value: TExpectedValues[number] }
+          >,
+          TokenMarker
+        ])
+      : maybe.none();
+  });
 }
 
 function readToken<
   TExpectedTypes extends Array<Token['type']>,
-  TExpectedValues extends Array<
-    Extract<Token, { type: TExpectedTypes[number] }>['value']
-  >
+  TExpectedValues extends Array<InferExpectedValue<TExpectedTypes[number]>>
 >(
   tokenMarker: TokenMarker,
   matchTypes?: TExpectedTypes,
   matchValues?: TExpectedValues
-): result.Result<
-  readonly [
-    Extract<
-      Token,
-      { type: TExpectedTypes[number]; value: TExpectedValues[number] }
-    >,
-    TokenMarker
-  ],
-  InterpratationError
-> {
-  return pipe(
-    readTokenIf(tokenMarker, matchTypes, matchValues as any),
-    maybe.match({
-      some: (readResult) =>
-        result.ok(readResult) as result.Result<
-          readonly [
-            Extract<
-              Token,
-              { type: TExpectedTypes[number]; value: TExpectedValues[number] }
-            >,
-            TokenMarker
-          ],
-          InterpratationError
-        >,
-      none: () => {
-        return pipe(
-          getCurrentToken(tokenMarker),
-          maybe.match({
-            some: (token) =>
-              result.error({
+): ReadTokenResult<TExpectedTypes[number], TExpectedValues[number]> {
+  return maybe.match(readTokenIf(tokenMarker, matchTypes, matchValues as any), {
+    some: (readResult) =>
+      result
+        .from<
+          ReadTokenResult<TExpectedTypes[number], TExpectedValues[number]>
+        >()
+        .ok(readResult),
+    none: () => {
+      return pipe(
+        getCurrentToken(tokenMarker),
+        maybe.match({
+          some: (token) =>
+            result
+              .from<
+                ReadTokenResult<TExpectedTypes[number], TExpectedValues[number]>
+              >()
+              .error({
                 reason: INTERPRETATION_ERROR_CODES.unexpected_token,
                 token,
               }),
-            none: () =>
-              result.error({
+          none: () =>
+            result
+              .from<
+                ReadTokenResult<TExpectedTypes[number], TExpectedValues[number]>
+              >()
+              .error({
                 reason: INTERPRETATION_ERROR_CODES.unexpected_end_of_input,
-              }) as result.Result<
-                readonly [
-                  Extract<
-                    Token,
-                    {
-                      type: TExpectedTypes[number];
-                      value: TExpectedValues[number];
-                    }
-                  >,
-                  TokenMarker
-                ],
-                InterpratationError
-              >,
-          })
-        );
-      },
-    })
-  );
+              }),
+        })
+      );
+    },
+  });
 }
 
 function advanceCursor({ tokens, cursor }: TokenMarker): TokenMarker {
@@ -357,14 +320,30 @@ function advanceCursor({ tokens, cursor }: TokenMarker): TokenMarker {
   };
 }
 
-function lookvalue<T>(values: { [key: string]: T }, key: string) {
+function lookvalue<T>(
+  values: { [key: string]: T },
+  key: string
+): maybe.Maybe<T> {
   key = key.toLowerCase();
-  return key in values ? maybe.some(values[key]) : maybe.none;
+  return key in values ? maybe.some(values[key]) : maybe.none();
 }
 
 function exhaustiveResult(value: never): PartialInterpretationResult {
-  return result.error({
+  return createPartialResultError({
     reason: INTERPRETATION_ERROR_CODES.exhaustive_check_failed,
     value,
   });
+}
+
+function createPartialResultOK(
+  value: number,
+  next: TokenMarker
+): PartialInterpretationResult {
+  return result.from<PartialInterpretationResult>().ok({ value, next });
+}
+
+function createPartialResultError(
+  error: InterpratationError
+): PartialInterpretationResult {
+  return result.from<PartialInterpretationResult>().error(error);
 }
