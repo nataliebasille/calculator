@@ -5,6 +5,9 @@ type InterpreterContext = {
   readonly numbers: {
     readonly [key: string]: number;
   };
+  readonly functions: {
+    readonly [key: string]: (...args: number[]) => number;
+  };
 };
 
 export type InterpratationError =
@@ -23,7 +26,7 @@ export type InterpratationError =
       reason: 'division_by_zero';
     }
   | {
-      reason: 'unknown_number';
+      reason: 'unknown_identifier';
       identifier: string;
     };
 
@@ -31,7 +34,7 @@ export const INTERPRETATION_ERROR_CODES = {
   division_by_zero: 'division_by_zero',
   exhaustive_check_failed: 'exhaustive_check_failed',
   unexpected_end_of_input: 'unexpected_end_of_input',
-  unknown_number: 'unknown_number',
+  unknown_identifier: 'unknown_identifier',
   unexpected_token: 'unexpected_token',
 } as const;
 
@@ -176,16 +179,105 @@ function interpretSigned(
 ): PartialInterpretationResult {
   return maybe.match(readTokenIf(tokenMarker, ['operator'], ['-', '+']), {
     some: ([operatorToken, next]) => {
-      return result.flatMap(interpretUnit(next, context), ({ value, next }) => {
-        return operatorToken.value === '-'
-          ? createPartialResultOK(-value, next)
-          : operatorToken.value === '+'
-          ? createPartialResultOK(value, next)
-          : exhaustiveResult(operatorToken);
-      });
+      return result.flatMap(
+        interpretFunctionCall(next, context),
+        ({ value, next }) => {
+          return operatorToken.value === '-'
+            ? createPartialResultOK(-value, next)
+            : operatorToken.value === '+'
+            ? createPartialResultOK(value, next)
+            : exhaustiveResult(operatorToken);
+        }
+      );
     },
-    none: () => interpretUnit(tokenMarker, context),
+    none: () => interpretFunctionCall(tokenMarker, context),
   });
+}
+
+function interpretFunctionCall(
+  marker: TokenMarker,
+  context: InterpreterContext
+): PartialInterpretationResult {
+  const potentialIdentifier = readTokenIf(marker, ['identifier']);
+
+  if (potentialIdentifier.type === 'some') {
+    const [identifierToken, next] = potentialIdentifier.value;
+    const potentialFunction = lookvalue(
+      context.functions,
+      identifierToken.value
+    );
+
+    if (potentialFunction.type === 'some') {
+      const { value: func } = potentialFunction;
+      const potentialLeftParen = readTokenIf(next, ['left_paren']);
+
+      if (potentialLeftParen.type === 'some') {
+        const [, next] = potentialLeftParen.value;
+        return result.flatMap(
+          interpretFunctionCallArgumentChain(next, context),
+          ({ values: args, next }) => {
+            return result.flatMap(
+              readToken(next, ['right_paren']),
+              ([, next]) => {
+                return createPartialResultOK(func(...args), next);
+              }
+            );
+          }
+        );
+      }
+
+      return result.flatMap(
+        interpretFunctionCall(next, context),
+        ({ value: argument, next }) => {
+          return createPartialResultOK(func(argument), next);
+        }
+      );
+    }
+
+    const potentialNumber = lookvalue(context.numbers, identifierToken.value);
+
+    return potentialNumber.type === 'some'
+      ? createPartialResultOK(potentialNumber.value, next)
+      : createPartialResultError({
+          reason: INTERPRETATION_ERROR_CODES.unknown_identifier,
+          identifier: identifierToken.value,
+        });
+  }
+
+  return interpretUnit(marker, context);
+}
+
+type FunctionCallArgumentChainResult = result.Result<
+  { readonly values: number[]; readonly next: TokenMarker },
+  InterpratationError
+>;
+
+function interpretFunctionCallArgumentChain(
+  marker: TokenMarker,
+  context: InterpreterContext
+): FunctionCallArgumentChainResult {
+  return result.flatMap(
+    interpretExpression(marker, context),
+    ({ value, next }) => {
+      const potentialComma = readTokenIf(next, ['comma']);
+
+      if (potentialComma.type === 'some') {
+        const [, next] = potentialComma.value;
+        return result.flatMap(
+          interpretFunctionCallArgumentChain(next, context),
+          ({ values, next }) => {
+            return result
+              .from<FunctionCallArgumentChainResult>()
+              .ok({ values: [value, ...values], next });
+          }
+        );
+      }
+
+      return result
+        .from<FunctionCallArgumentChainResult>()
+        .ok({ values: [value], next });
+    }
+  );
 }
 
 function interpretUnit(
@@ -193,18 +285,9 @@ function interpretUnit(
   context: InterpreterContext
 ): PartialInterpretationResult {
   return result.flatMap(
-    readToken(tokenMarker, ['identifier', 'number', 'left_paren']),
+    readToken(tokenMarker, ['number', 'left_paren']),
     ([token, next]) => {
       switch (token.type) {
-        case 'identifier':
-          return maybe.match(lookvalue(context.numbers, token.value), {
-            some: (value) => createPartialResultOK(value, next),
-            none: () =>
-              createPartialResultError({
-                reason: INTERPRETATION_ERROR_CODES.unknown_number,
-                identifier: token.value,
-              }),
-          });
         case 'number':
           return createPartialResultOK(token.value, next);
         case 'left_paren':

@@ -55,6 +55,15 @@ const tokenTesters: ReadonlyArray<TokenTester> = [
       };
     },
   },
+  {
+    test: ',',
+    createToken(value: ',') {
+      return {
+        type: 'comma',
+        value: value,
+      };
+    },
+  },
 ];
 
 export function tokenize(input: string): result.Result<Token[], string> {

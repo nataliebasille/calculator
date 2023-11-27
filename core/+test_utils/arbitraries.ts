@@ -32,3 +32,27 @@ export const anyNumberStringArbitrary = fc.oneof(
 );
 export const operatorArbitrary = fc.constantFrom('+', '-', '*', '/', '^');
 export const parenthesisArbitrary = fc.constantFrom('(', ')');
+export const oneParamFunctionArbitrary = fc
+  .constantFrom(
+    'sin',
+    'cos',
+    'tan',
+    'asin',
+    'acos',
+    'atan',
+    'log',
+    'sqrt',
+    'abs',
+    'floor',
+    'ceil',
+    'round'
+  )
+  .map((fn) =>
+    fn
+      .toLowerCase()
+      .split('')
+      .map(function (c) {
+        return Math.random() < 0.5 ? c : c.toUpperCase();
+      })
+      .join('')
+  );

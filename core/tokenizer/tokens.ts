@@ -25,8 +25,14 @@ export type IdentifierToken = {
   value: string;
 };
 
+export type CommaToken = {
+  type: 'comma';
+  value: ',';
+};
+
 export type Token =
   | NumberToken
   | OperatorToken<'+' | '-' | '*' | '/' | '^'>
   | ParenthesisToken
-  | IdentifierToken;
+  | IdentifierToken
+  | CommaToken;

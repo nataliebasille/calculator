@@ -10,9 +10,10 @@ import {
   anyNumberStringArbitrary,
   builtinNumberArbitrary,
   numberStringArbitrary,
+  oneParamFunctionArbitrary,
   signArbitrary,
 } from '../+test_utils/arbitraries';
-import { numbers } from '../builtin';
+import * as builtins from '../builtin';
 
 describe('interpret', () => {
   test('should interpret arbitrary number strings correctly', () => {
@@ -142,7 +143,7 @@ describe('interpret', () => {
     );
   });
 
-  it('[$1] + [$2] * [$3] = [$1] + ([$2] * [$3])', () => {
+  it('[$1] + [$2] * [$3] equals [$1] + ([$2] * [$3])', () => {
     fc.assert(
       fc.property(
         fc.tuple(
@@ -160,7 +161,7 @@ describe('interpret', () => {
     );
   });
 
-  it('[$1] ^ [$2] * [$3] = [$3] * ([$1] ^ [$2])', () => {
+  it('[$1] ^ [$2] * [$3] equals [$3] * ([$1] ^ [$2])', () => {
     fc.assert(
       fc.property(
         fc.tuple(
@@ -215,6 +216,42 @@ describe('interpret', () => {
       )
     );
   });
+
+  it('for 1 param functions: [fn] [number] equals [fn]([number])', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(oneParamFunctionArbitrary, anyNumberStringArbitrary),
+        ([fn, numberString]) => {
+          const [left] = expectEqualResults(
+            `${fn} ${numberString}`,
+            `${fn}(${numberString})`
+          );
+          expect(left.type).toBe('ok');
+        }
+      )
+    );
+  });
+
+  it('can handle multiple param functions', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(
+          fc.constantFrom('min', 'max'),
+          fc.array(anyNumberStringArbitrary, { minLength: 2, maxLength: 10 })
+        ),
+        ([fn, numbers]) => {
+          runInterpretationTest(
+            `${fn}(${numbers.join(', ')})`,
+            result.ok(
+              fn.toLowerCase() === 'min'
+                ? Math.min(...numbers.map(getNumber))
+                : Math.max(...numbers.map(getNumber))
+            )
+          );
+        }
+      )
+    );
+  });
 });
 
 function runInterpretationTest(
@@ -223,7 +260,7 @@ function runInterpretationTest(
 ) {
   const output = pipe(
     tokenize(input),
-    result.flatMap((tokens) => interpret(tokens, { numbers }))
+    result.flatMap((tokens) => interpret(tokens, builtins))
   );
 
   expect(output).toEqual(expected);
@@ -232,12 +269,22 @@ function runInterpretationTest(
 function expectEqualResults(input1: string, input2: string) {
   const output1 = pipe(
     tokenize(input1),
-    result.flatMap((tokens) => interpret(tokens, { numbers }))
+    result.flatMap((tokens) => interpret(tokens, builtins))
   );
   const output2 = pipe(
     tokenize(input2),
-    result.flatMap((tokens) => interpret(tokens, { numbers }))
+    result.flatMap((tokens) => interpret(tokens, builtins))
   );
 
   expect(output1).toEqual(output2);
+
+  return [output1, output2];
+}
+
+function getNumber(value: string) {
+  return value.toLowerCase() === 'pi'
+    ? Math.PI
+    : value.toLowerCase() === 'e'
+    ? Math.E
+    : parseFloat(value);
 }
