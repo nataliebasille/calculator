@@ -267,28 +267,57 @@ describe('interpret', () => {
       )
     );
   });
+
+  it('can handle multiple |>', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(
+          anyNumberStringArbitrary,
+          oneParamFunctionArbitrary,
+          oneParamFunctionArbitrary,
+          oneParamFunctionArbitrary
+        ),
+        ([numberString, fn1, fn2, fn3]) => {
+          const [first] = expectEqualResults(
+            `${numberString} |> ${fn1} |> ${fn2} |> ${fn3}`,
+            `${fn3}(${fn2}(${fn1}(${numberString})))`
+          );
+          expect(first.type).toBe('ok');
+        }
+      )
+    );
+  });
+
+  it('can |> into a function with single right hand parameters', () => {
+    fc.assert(
+      fc.property(fc.tuple(anyNumberStringArbitrary), ([numberString]) => {
+        const [first] = expectEqualResults(
+          `${numberString} |> max 0`,
+          `max(${numberString}, 0)`
+        );
+        expect(first.type).toBe('ok');
+      })
+    );
+  });
 });
 
 function runInterpretationTest(
   input: string,
   expected: result.Result<number, InterpratationError>
 ) {
-  const output = pipe(
-    tokenize(input),
-    result.flatMap((tokens) => interpret(tokens, builtins))
+  const output = result.flatMap(tokenize(input), (tokens) =>
+    interpret(tokens, builtins)
   );
 
   expect(output).toEqual(expected);
 }
 
 function expectEqualResults(input1: string, input2: string) {
-  const output1 = pipe(
-    tokenize(input1),
-    result.flatMap((tokens) => interpret(tokens, builtins))
+  const output1 = result.flatMap(tokenize(input1), (tokens) =>
+    interpret(tokens, builtins)
   );
-  const output2 = pipe(
-    tokenize(input2),
-    result.flatMap((tokens) => interpret(tokens, builtins))
+  const output2 = result.flatMap(tokenize(input2), (tokens) =>
+    interpret(tokens, builtins)
   );
 
   expect(output1).toEqual(output2);

@@ -11,6 +11,11 @@ export type TokenMarker = Readonly<{
   cursor: number;
 }>;
 
+export type ReadResult<T> = result.Result<
+  readonly [T, TokenMarker],
+  InterpratationError
+>;
+
 export function getCurrentToken({
   tokens,
   cursor,
@@ -26,12 +31,8 @@ type InferExpectedValue<TType extends Token['type']> = Extract<
 type ReadTokenResult<
   TExpectedTypes extends Token['type'],
   TExpectedValues extends Token['value']
-> = result.Result<
-  readonly [
-    Extract<Token, { type: TExpectedTypes; value: TExpectedValues }>,
-    TokenMarker
-  ],
-  InterpratationError
+> = ReadResult<
+  Extract<Token, { type: TExpectedTypes; value: TExpectedValues }>
 >;
 
 export function readTokenIf<
@@ -104,10 +105,7 @@ export function readToken<
   });
 }
 
-type ReadFunctionResult = result.Result<
-  readonly [(...args: number[]) => number, TokenMarker],
-  InterpratationError
->;
+type ReadFunctionResult = ReadResult<(...args: number[]) => number>;
 
 export function maybeReadFunction(
   tokenMarker: TokenMarker,
@@ -157,10 +155,7 @@ export function readFunction(
   });
 }
 
-type ReadVariableResult = result.Result<
-  readonly [number, TokenMarker],
-  InterpratationError
->;
+type ReadVariableResult = ReadResult<number>;
 
 export function maybeReadVariable(
   tokenMarker: TokenMarker,

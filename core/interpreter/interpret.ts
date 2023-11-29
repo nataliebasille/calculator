@@ -1,4 +1,4 @@
-import { maybe, result } from '@natcore/typescript-utils/functional';
+import { maybe, pipe, result } from '@natcore/typescript-utils/functional';
 import { Token } from '../tokenizer/tokens';
 import {
   INTERPRETATION_ERROR_CODES,
@@ -6,6 +6,7 @@ import {
 } from './interpreter_errors';
 import {
   TokenMarker,
+  getCurrentToken,
   maybeReadFunction,
   maybeReadVariable,
   readFunction,
@@ -58,14 +59,31 @@ function interpretPipe(
 ): PartialInterpretationResult {
   const potentialPipe = readTokenIf(tokenMarker, ['pipe']);
 
-  return maybe.match(potentialPipe, {
-    some: ([, next]) => {
-      return result.flatMap(readFunction(next, context), ([fn, next]) => {
-        return interpretPipe(fn(leftValue), next, context);
-      });
-    },
-    none: () => createPartialResultOK(leftValue, tokenMarker),
-  });
+  if (maybe.isSome(potentialPipe)) {
+    const [, next] = potentialPipe.value;
+    return result.flatMap(readFunction(next, context), ([fn, next]) => {
+      return pipe(
+        getCurrentToken(next),
+        maybe.match({
+          some: (token) => {
+            if (token.type !== 'pipe') {
+              return result.flatMap(
+                interpretTerm(next, context),
+                ({ value: restValue, next }) => {
+                  return interpretPipe(fn(leftValue, restValue), next, context);
+                }
+              );
+            }
+
+            return interpretPipe(fn(leftValue), next, context);
+          },
+          none: () => interpretPipe(fn(leftValue), next, context),
+        })
+      );
+    });
+  }
+
+  return createPartialResultOK(leftValue, tokenMarker);
 }
 
 function interpretTerm(
