@@ -1,9 +1,5 @@
 import * as fc from 'fast-check';
-import {
-  INTERPRETATION_ERROR_CODES,
-  InterpratationError,
-  interpret,
-} from './interpret';
+import { interpret } from './interpret';
 import { tokenize } from '../tokenizer/tokenizer';
 import { pipe, result } from '@natcore/typescript-utils/functional';
 import {
@@ -14,6 +10,10 @@ import {
   signArbitrary,
 } from '../+test_utils/arbitraries';
 import * as builtins from '../builtin';
+import {
+  INTERPRETATION_ERROR_CODES,
+  InterpratationError,
+} from './interpreter_errors';
 
 describe('interpret', () => {
   test('should interpret arbitrary number strings correctly', () => {
