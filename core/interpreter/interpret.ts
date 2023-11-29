@@ -5,6 +5,7 @@ import {
   InterpratationError,
 } from './interpreter_errors';
 import {
+  ReadResult,
   TokenMarker,
   getCurrentToken,
   maybeReadFunction,
@@ -17,13 +18,7 @@ import { InterpreterContext } from './context';
 
 export type InterpretationResult = result.Result<number, InterpratationError>;
 
-type PartialInterpretationResult = result.Result<
-  {
-    value: number;
-    next: TokenMarker;
-  },
-  InterpratationError
->;
+type PartialInterpretationResult = ReadResult<number>;
 
 export function interpret(
   tokens: Token[],
@@ -31,7 +26,7 @@ export function interpret(
 ): InterpretationResult {
   return result.flatMap(
     interpretExpression({ tokens, cursor: 0 }, context),
-    ({ value, next: { cursor, tokens } }) => {
+    ([value, { cursor, tokens }]) => {
       return cursor < tokens.length
         ? result.from<InterpretationResult>().error({
             reason: INTERPRETATION_ERROR_CODES.unexpected_token,
@@ -46,9 +41,8 @@ function interpretExpression(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return result.flatMap(
-    interpretTerm(tokenMarker, context),
-    ({ value, next }) => interpretPipe(value, next, context)
+  return result.flatMap(interpretTerm(tokenMarker, context), ([value, next]) =>
+    interpretPipe(value, next, context)
   );
 }
 
@@ -69,7 +63,7 @@ function interpretPipe(
             if (token.type !== 'pipe') {
               return result.flatMap(
                 interpretTerm(next, context),
-                ({ value: restValue, next }) => {
+                ([restValue, next]) => {
                   return interpretPipe(fn(leftValue, restValue), next, context);
                 }
               );
@@ -92,7 +86,7 @@ function interpretTerm(
 ): PartialInterpretationResult {
   return result.flatMap(
     interpretFactor(tokenMarker, context),
-    ({ value, next }) => interpretTermTail(value, next, context)
+    ([value, next]) => interpretTermTail(value, next, context)
   );
 }
 
@@ -105,7 +99,7 @@ function interpretTermTail(
     some: ([operatorToken, next]) => {
       return result.flatMap(
         interpretFactor(next, context),
-        ({ value: rightValue, next }) => {
+        ([rightValue, next]) => {
           return operatorToken.value === '+'
             ? createPartialResultOK(leftValue + rightValue, next)
             : operatorToken.value === '-'
@@ -124,7 +118,7 @@ function interpretFactor(
 ): PartialInterpretationResult {
   return result.flatMap(
     interpretExponent(tokenMarker, context),
-    ({ value, next }) => interpretFactorTail(value, next, context)
+    ([value, next]) => interpretFactorTail(value, next, context)
   );
 }
 
@@ -137,7 +131,7 @@ function interpretFactorTail(
     some: ([operatorToken, next]) => {
       return result.flatMap(
         interpretExponent(next, context),
-        ({ value: rightValue, next }) => {
+        ([rightValue, next]) => {
           return operatorToken.value === '*'
             ? createPartialResultOK(leftValue * rightValue, next)
             : operatorToken.value === '/'
@@ -160,7 +154,7 @@ function interpretExponent(
 ): PartialInterpretationResult {
   return result.flatMap(
     interpretSigned(tokenMarker, context),
-    ({ value, next }) => interpretExponentTail(value, next, context)
+    ([value, next]) => interpretExponentTail(value, next, context)
   );
 }
 
@@ -173,7 +167,7 @@ function interpretExponentTail(
     some: ([operatorToken, next]) => {
       return result.flatMap(
         interpretSigned(next, context),
-        ({ value: rightValue, next }) => {
+        ([rightValue, next]) => {
           return operatorToken.value === '^'
             ? createPartialResultOK(Math.pow(leftValue, rightValue), next)
             : exhaustiveResult(operatorToken.value);
@@ -192,7 +186,7 @@ function interpretSigned(
     some: ([operatorToken, next]) => {
       return result.flatMap(
         interpretFunctionCall(next, context),
-        ({ value, next }) => {
+        ([value, next]) => {
           return operatorToken.value === '-'
             ? createPartialResultOK(-value, next)
             : operatorToken.value === '+'
@@ -234,7 +228,7 @@ function interpretFunctionCall(
 
     return result.flatMap(
       interpretFunctionCall(next, context),
-      ({ value: argument, next }) => {
+      ([argument, next]) => {
         return createPartialResultOK(func(argument), next);
       }
     );
@@ -271,7 +265,7 @@ function interpretFunctionCallArgumentChain(
 ): FunctionCallArgumentChainResult {
   return result.flatMap(
     interpretExpression(marker, context),
-    ({ value, next }) => {
+    ([value, next]) => {
       const potentialComma = readTokenIf(next, ['comma']);
 
       if (potentialComma.type === 'some') {
@@ -306,11 +300,11 @@ function interpretUnit(
         case 'left_paren':
           return result.flatMap(
             interpretExpression(next, context),
-            ({ value, next }) =>
-              result.map(readToken(next, ['right_paren']), ([, next]) => ({
-                value,
-                next,
-              }))
+            ([value, next]) =>
+              result.map(
+                readToken(next, ['right_paren']),
+                ([, next]) => [value, next] as const
+              )
           );
         default:
           return exhaustiveResult(token);
@@ -330,7 +324,7 @@ function createPartialResultOK(
   value: number,
   next: TokenMarker
 ): PartialInterpretationResult {
-  return result.from<PartialInterpretationResult>().ok({ value, next });
+  return result.from<PartialInterpretationResult>().ok([value, next]);
 }
 
 function createPartialResultError(
