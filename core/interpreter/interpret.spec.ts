@@ -252,6 +252,21 @@ describe('interpret', () => {
       )
     );
   });
+
+  it('[number] |> [fn] equals [fn] [number]', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(anyNumberStringArbitrary, oneParamFunctionArbitrary),
+        ([numberString, fn]) => {
+          const [first] = expectEqualResults(
+            `${numberString} |> ${fn}`,
+            `${fn} ${numberString}`
+          );
+          expect(first.type).toBe('ok');
+        }
+      )
+    );
+  });
 });
 
 function runInterpretationTest(

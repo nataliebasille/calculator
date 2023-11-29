@@ -30,9 +30,15 @@ export type CommaToken = {
   value: ',';
 };
 
+export type PipeToken = {
+  type: 'pipe';
+  value: '|>';
+};
+
 export type Token =
   | NumberToken
   | OperatorToken<'+' | '-' | '*' | '/' | '^'>
   | ParenthesisToken
   | IdentifierToken
-  | CommaToken;
+  | CommaToken
+  | PipeToken;

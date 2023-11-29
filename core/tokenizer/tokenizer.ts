@@ -20,6 +20,15 @@ const tokenTesters: ReadonlyArray<TokenTester> = [
     },
   },
   {
+    test: /\|>/,
+    createToken(value: string) {
+      return {
+        type: 'pipe',
+        value: value as '|>',
+      };
+    },
+  },
+  {
     test: /[-+*/^]/,
     createToken(value: string) {
       return {

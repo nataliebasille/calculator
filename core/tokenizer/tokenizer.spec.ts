@@ -195,6 +195,51 @@ describe('tokenize', () => {
       )
     );
   });
+
+  test('tokenizes [number | identifier] |> [identifier]', () => {
+    fc.assert(
+      fc.property(
+        fc.tuple(
+          fc.oneof(anyNumberStringArbitrary, identifierArbitrary),
+          fc.array(fc.constant(' '), { minLength: 0, maxLength: 10 }),
+          fc.constant('|>'),
+          fc.array(fc.constant(' '), { minLength: 0, maxLength: 10 }),
+          identifierArbitrary
+        ),
+        ([first, firstWhitespace, pipe, secondWhitespace, second]) => {
+          function createToken(value: string): Token {
+            return !isNaN(parseFloat(value))
+              ? {
+                  type: 'number',
+                  value: parseFloat(value),
+                }
+              : {
+                  type: 'identifier',
+                  value: value.toLowerCase(),
+                };
+          }
+          const leftToken = createToken(first);
+          const rightToken = createToken(second);
+          expectResultsToBe(
+            tokenize(
+              `${first}${firstWhitespace.join(
+                ''
+              )}${pipe}${secondWhitespace.join('')}${second}`
+            ),
+            'ok',
+            [
+              leftToken,
+              {
+                type: 'pipe',
+                value: pipe as '|>',
+              },
+              rightToken,
+            ]
+          );
+        }
+      )
+    );
+  });
 });
 
 function expectResultsToBe(

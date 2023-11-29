@@ -72,7 +72,27 @@ function interpretExpression(
   tokenMarker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  return interpretTerm(tokenMarker, context);
+  return result.flatMap(
+    interpretTerm(tokenMarker, context),
+    ({ value, next }) => interpretPipe(value, next, context)
+  );
+}
+
+function interpretPipe(
+  leftValue: number,
+  tokenMarker: TokenMarker,
+  context: InterpreterContext
+): PartialInterpretationResult {
+  const potentialPipe = readTokenIf(tokenMarker, ['pipe']);
+
+  return maybe.match(potentialPipe, {
+    some: ([, next]) => {
+      return result.flatMap(readFunction(next, context), ([fn, next]) => {
+        return interpretPipe(fn(leftValue), next, context);
+      });
+    },
+    none: () => createPartialResultOK(leftValue, tokenMarker),
+  });
 }
 
 function interpretTerm(
@@ -198,50 +218,52 @@ function interpretFunctionCall(
   marker: TokenMarker,
   context: InterpreterContext
 ): PartialInterpretationResult {
-  const potentialIdentifier = readTokenIf(marker, ['identifier']);
+  const potentialFunction = maybeReadFunction(marker, context);
 
-  if (potentialIdentifier.type === 'some') {
-    const [identifierToken, next] = potentialIdentifier.value;
-    const potentialFunction = lookvalue(
-      context.functions,
-      identifierToken.value
-    );
+  if (potentialFunction.type === 'some') {
+    const {
+      value: [func, next],
+    } = potentialFunction;
+    const potentialLeftParen = readTokenIf(next, ['left_paren']);
 
-    if (potentialFunction.type === 'some') {
-      const { value: func } = potentialFunction;
-      const potentialLeftParen = readTokenIf(next, ['left_paren']);
-
-      if (potentialLeftParen.type === 'some') {
-        const [, next] = potentialLeftParen.value;
-        return result.flatMap(
-          interpretFunctionCallArgumentChain(next, context),
-          ({ values: args, next }) => {
-            return result.flatMap(
-              readToken(next, ['right_paren']),
-              ([, next]) => {
-                return createPartialResultOK(func(...args), next);
-              }
-            );
-          }
-        );
-      }
-
+    if (potentialLeftParen.type === 'some') {
+      const [, next] = potentialLeftParen.value;
       return result.flatMap(
-        interpretFunctionCall(next, context),
-        ({ value: argument, next }) => {
-          return createPartialResultOK(func(argument), next);
+        interpretFunctionCallArgumentChain(next, context),
+        ({ values: args, next }) => {
+          return result.flatMap(
+            readToken(next, ['right_paren']),
+            ([, next]) => {
+              return createPartialResultOK(func(...args), next);
+            }
+          );
         }
       );
     }
 
-    const potentialNumber = lookvalue(context.numbers, identifierToken.value);
+    return result.flatMap(
+      interpretFunctionCall(next, context),
+      ({ value: argument, next }) => {
+        return createPartialResultOK(func(argument), next);
+      }
+    );
+  }
 
-    return potentialNumber.type === 'some'
-      ? createPartialResultOK(potentialNumber.value, next)
-      : createPartialResultError({
-          reason: INTERPRETATION_ERROR_CODES.unknown_identifier,
-          identifier: identifierToken.value,
-        });
+  const potentialNumber = maybeReadVariable(marker, context);
+
+  if (potentialNumber.type === 'some') {
+    const [value, next] = potentialNumber.value;
+    return createPartialResultOK(value, next);
+  }
+
+  const potentialIdentifier = readTokenIf(marker, ['identifier']);
+
+  if (potentialIdentifier.type === 'some') {
+    const [identifier] = potentialIdentifier.value;
+    return createPartialResultError({
+      reason: INTERPRETATION_ERROR_CODES.unknown_identifier,
+      identifier: identifier.value,
+    });
   }
 
   return interpretUnit(marker, context);
@@ -396,6 +418,112 @@ function readToken<
   });
 }
 
+type ReadFunctionResult = result.Result<
+  readonly [(...args: number[]) => number, TokenMarker],
+  InterpratationError
+>;
+
+function maybeReadFunction(
+  tokenMarker: TokenMarker,
+  context: InterpreterContext
+): maybe.Maybe<result.Result_InferOK<ReadFunctionResult>> {
+  return maybe.flatMap(
+    readTokenIf(tokenMarker, ['identifier']),
+    ([token, next]) => {
+      return maybe.map(lookupValue(context.functions, token.value), (fn) => [
+        fn,
+        next,
+      ]);
+    }
+  );
+}
+
+function readFunction(
+  tokenMarker: TokenMarker,
+  context: InterpreterContext
+): ReadFunctionResult {
+  return maybe.match(maybeReadFunction(tokenMarker, context), {
+    some: (readResult) => result.from<ReadFunctionResult>().ok(readResult),
+    none: () => {
+      return pipe(
+        getCurrentToken(tokenMarker),
+        maybe.match({
+          some: (token) => {
+            const error: InterpratationError =
+              token.type === 'identifier'
+                ? {
+                    reason: INTERPRETATION_ERROR_CODES.unknown_identifier,
+                    identifier: token.value,
+                  }
+                : {
+                    reason: INTERPRETATION_ERROR_CODES.unexpected_token,
+                    token,
+                  };
+            return result.from<ReadFunctionResult>().error(error);
+          },
+          none: () =>
+            result.from<ReadFunctionResult>().error({
+              reason: INTERPRETATION_ERROR_CODES.unexpected_end_of_input,
+            }),
+        })
+      );
+    },
+  });
+}
+
+type ReadVariableResult = result.Result<
+  readonly [number, TokenMarker],
+  InterpratationError
+>;
+
+function maybeReadVariable(
+  tokenMarker: TokenMarker,
+  context: InterpreterContext
+): maybe.Maybe<result.Result_InferOK<ReadVariableResult>> {
+  return maybe.flatMap(
+    readTokenIf(tokenMarker, ['identifier']),
+    ([token, next]) => {
+      return maybe.map(lookupValue(context.numbers, token.value), (value) => [
+        value,
+        next,
+      ]);
+    }
+  );
+}
+
+function readVariable(
+  tokenMarker: TokenMarker,
+  context: InterpreterContext
+): ReadVariableResult {
+  return maybe.match(maybeReadVariable(tokenMarker, context), {
+    some: (readResult) => result.from<ReadVariableResult>().ok(readResult),
+    none: () => {
+      return pipe(
+        getCurrentToken(tokenMarker),
+        maybe.match({
+          some: (token) => {
+            const error: InterpratationError =
+              token.type === 'identifier'
+                ? {
+                    reason: INTERPRETATION_ERROR_CODES.unknown_identifier,
+                    identifier: token.value,
+                  }
+                : {
+                    reason: INTERPRETATION_ERROR_CODES.unexpected_token,
+                    token,
+                  };
+            return result.from<ReadVariableResult>().error(error);
+          },
+          none: () =>
+            result.from<ReadVariableResult>().error({
+              reason: INTERPRETATION_ERROR_CODES.unexpected_end_of_input,
+            }),
+        })
+      );
+    },
+  });
+}
+
 function advanceCursor({ tokens, cursor }: TokenMarker): TokenMarker {
   return {
     tokens,
@@ -403,7 +531,7 @@ function advanceCursor({ tokens, cursor }: TokenMarker): TokenMarker {
   };
 }
 
-function lookvalue<T>(
+function lookupValue<T>(
   values: { [key: string]: T },
   key: string
 ): maybe.Maybe<T> {
